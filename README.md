@@ -1,265 +1,201 @@
-# gke-platform
+# Platform Desk
 
-A small self-service platform on Google Cloud (GKE): a product team gets a namespace,
-cloud permissions and a backed-up Postgres database from one YAML file.
+A developer asks for a namespace and a Postgres database in team chat. Three agents
+handle the request in [Switch](https://docs.switchagents.ai) rooms:
+- one talks to the developer and drafts the request;
+- one checks it against the platform's policy;
+- one ships it.
 
-I built it in October 2026 to get hands-on with GCP, next to the AKS platforms I
-run at work. It's deliberately small: one zonal cluster, two example teams.
+The platform engineer approves the one step that changes anything, with one click.
 
-```yaml
-# teams/<team>.yaml — the file name is the team name and the namespace
-team: voice-api
-owners: [alice@example.com]
-quota: { cpu: "4", memory: 8Gi, storage: 50Gi }
-postgres: { enabled: true, instances: 2, storage: 5Gi }
-```
+What comes out is a merged pull request adding `teams/<team>.yaml`, a namespace with
+guardrails, a running two-instance Postgres, and a handover message in the chat.
 
-From that file:
-
-- **Terraform** (`make apply`) validates it, creates the team's GCS backup bucket,
-  grants the team's namespace access to it through Workload Identity Federation, and
-  lets the owners reach the cluster. It then publishes the bucket name to Argo CD.
-- **Argo CD** creates the namespace with Pod Security, a quota, default requests, a
-  namespace-local NetworkPolicy and an `edit` RoleBinding for the owners. It also
-  creates a CloudNativePG cluster that archives WAL and daily base backups to the
-  bucket. Until Terraform has run, the team's Postgres doesn't render at all, rather
-  than archiving to a bucket that doesn't exist.
-
-There are no service account keys, and no project IDs or bucket names in Git.
+Built for WeMakeDevs' [Flip the Switch](https://www.wemakedevs.org/hackathons/switch)
+hackathon, Track 01 (business workflow).
 
 ```mermaid
-flowchart LR
-  T["teams/*.yaml"] --> TF[Terraform]
-  T --> AS["Argo CD ApplicationSet"]
-  TF --> GKE["GKE cluster<br/>private nodes, DNS endpoint"]
-  TF --> GCS[("GCS bucket per team<br/>+ IAM for the namespace")]
-  TF -- "cluster secret annotations<br/>(bucket names)" --> AS
-  AS --> NS["namespace, Pod Security, quota,<br/>NetworkPolicy, RBAC"]
-  AS --> PG[("CloudNativePG<br/>Postgres")]
-  PG -- "WAL + base backups<br/>Workload Identity, no keys" --> GCS
+sequenceDiagram
+  actor Dev as Developer
+  participant I as platform-intake<br/>(Claude Code, room tools only)
+  participant R as platform-review<br/>(Codex, no network)
+  participant S as platform-ship<br/>(Claude Code, approval-required)
+  actor PE as Platform engineer
+  Dev->>I: #platform-requests: "namespace + Postgres for payments-api, 3 instances"
+  I->>Dev: asks for owners and size
+  I->>I: creates room req-payments-api, links it back
+  I->>R: draft teams/payments-api.yaml
+  R->>I: make validate: FAIL, 3 instances need 3 nodes, the cluster has 2
+  I->>Dev: explains, proposes 2
+  I->>R: corrected draft
+  R->>I: PASS
+  I->>PE: ready for your approval
+  PE->>S: "ship payments-api"
+  S->>PE: Switch approval card: the exact make ship command and YAML
+  PE->>S: Allow once
+  S->>S: branch, PR, merge, Argo CD sync, wait for Postgres
+  S->>I: SHIPPED handover
+  I->>Dev: namespace and connection details
 ```
 
-## Design decisions
+## How it uses Switch
 
-**One file, two control planes.** Terraform owns cloud resources and Argo CD owns
-in-cluster resources; `teams/*.yaml` is the contract both read, keyed by file name
-on both sides. Terraform rejects a file at plan time if:
+[`switch/platform-desk.template.yaml`](switch/platform-desk.template.yaml) is the
+whole setup: three agents, the `platform-requests` room and its kickoff. Import it in
+Switch Console and every limit below comes with it.
 
-- the `team` field doesn't match the file name;
-- the name collides with a system or platform namespace (`kube-*`, `argocd`, …), or
-  wouldn't fit in a bucket name;
-- `owners` isn't a list of emails.
+| Agent | Runs on | Who can address it | What it can do |
+|---|---|---|---|
+| `platform-intake` | Claude Code | anyone in the room | Only Switch's room tools: ask, draft, create and link rooms. No files, no shell, no web. |
+| `platform-review` | Codex (Claude Code if Codex isn't installed) | you and your agents | Run `make validate` in its own clone. Codex's sandbox has no network. |
+| `platform-ship` | Claude Code, `auto_mode: false`, `auto_approve: false` | you only | Run `make ship`, and only after you click Allow on its card. |
 
-The `teams` AppProject denies the same namespaces, in case a file reaches Argo CD
-first.
+- **One room per request.** Intake creates `req-<team>` with `create_room`, adds
+  the requester, you and the other two agents, and links it to `platform-requests`.
+  The question, the draft, the review, the failure, the fix, the approval, the PR
+  and the handover all stay in that room.
+- **Two vendors check each other.** Claude Code drafts and Codex reviews, by
+  @-mention in the room.
+- **The approval is a Switch permission card.** Ship runs approval-required, so its
+  one command waits on an Allow / Decline card that shows the full command and YAML.
+  Switch records who answered. Only the people ship takes orders from can answer, and
+  that's you alone. When the developer told ship to ship, Switch answered before
+  the model saw it: *"I only take instructions from my owner."*
+- **One card per request.** All of ship's work is one command:
+  `make ship TEAM=<team>` with the reviewed YAML in a heredoc. It
+  1. validates the YAML again;
+  2. opens the PR, with the room, the review result and the approver in its body;
+  3. merges it;
+  4. makes Argo CD refresh at once;
+  5. waits for the namespace and Postgres;
+  6. prints the handover.
 
-**Terraform hands values to Argo CD through the cluster secret** (the GitOps Bridge
-pattern). `make apply` writes Terraform outputs as annotations on Argo CD's cluster
-secret, and the teams ApplicationSet reads them back. There is no Terraform
-`kubernetes` provider pointed at a cluster it is still creating.
+  It never prints the password, only where to read it.
 
-**IAM instead of network allowlists.** The control plane has no IP endpoint at all.
-`kubectl` goes through the [DNS-based endpoint](https://cloud.google.com/kubernetes-engine/docs/concepts/network-isolation),
-authorised by `container.clusters.connect`. Nodes are private and reach the
-internet through Cloud NAT. They run as a dedicated service account with
-`roles/container.defaultNodeServiceAccount`, never the Compute Engine default
-(Editor).
+**Without Switch,** the developer has nobody to answer their follow-up questions, the
+reviewer can't hand its verdict back to the drafter, and the approval has nowhere to
+live. A webhook could run `make ship`, but it can't hold the conversation, or the
+separation between who drafts, who checks and who approves.
 
-**Workload Identity Federation with direct principals.** The backup bucket grants
-`principalSet://…/namespace/<team>`: the Kubernetes identities in the team's
-namespace, with no Google service account, annotation or key in between.
+### What each agent can reach, and what I found
 
-- The namespace is the trust boundary. Anything that runs there, including a
-  restore-drill cluster, can use the team's backups. Anyone with `edit` there can
-  delete them, which is why the bucket has 7 days of soft delete.
-- That identity is the same in every cluster of the project, so this assumes one
-  cluster per project.
-- `roles/storage.legacyBucketReader` is there because barman-cloud calls
-  `storage.buckets.get` before archiving, which `objectUser` doesn't include.
+The limits are set by the tools, not by the instructions. Testing in Switch found
+three holes in my first version; [BUILDLOG.md](BUILDLOG.md) has the details.
 
-**Postgres via CloudNativePG and the Barman Cloud plugin.**
+- **Claude Code's Read works on the whole disk.** The first intake had
+  `tools: Read, Grep, Glob`, no shell, and still read `~/.config/gh/hosts.yml` when
+  asked. An agent anyone can talk to could have posted a kubeconfig to the room.
+- **Switch's `send_attachment` uploads any local file by path**, so removing Read
+  alone isn't enough.
+- **`update_agent_detail` changes who may address another agent** without any
+  special capability. Through intake, a requester could have made ship take orders
+  from anyone, and then approved ship's command themselves.
 
-- The in-tree `barmanObjectStore` is deprecated as of CNPG 1.26, so backups use the
-  plugin (`ObjectStore` + `method: plugin`).
-- WAL is archived continuously: an RPO of at most `archive_timeout`, 5 minutes by
-  default.
-- Retention (`7d`) is barman's job. There's no bucket lifecycle rule that could
-  delete a base backup the WAL chain still needs.
-- With two instances, the replica must sit on another node, so one spot preemption
-  can't take out both. Replication is asynchronous.
-- Argo CD is told never to delete or prune the `Cluster` or its `ObjectStore`, so
-  removing or renaming a team file can't drop a database.
+Now intake's `tools` is `[mcp__switch]`, and its `disallowedTools` takes out the
+attachment tools and the ones that change agents, run templates or edit roles. Its
+session's tool list confirms it: no Read, Grep, Glob or Bash, and 43 of Switch's 59
+tools.
 
-**Guardrails per team namespace.**
+Ship's GitHub token is fine-grained and only works on this repo. On macOS it lives in
+the login keychain. Inside Codex's sandbox, reading a file worked, but a keychain
+lookup found nothing and the network was blocked.
 
-- Pod Security `baseline` is enforced, with `restricted` as a warning. GKE Standard
-  enforces nothing by default, and without it `edit` is enough to run a privileged
-  pod and take over the node.
-- A `ResourceQuota` caps requests, and allows no LoadBalancers or NodePorts. A
-  `LimitRange` gives pods without requests a default, so the quota doesn't reject
-  them.
-- The NetworkPolicy keeps ingress namespace-local by default, enforced by Dataplane
-  V2. It's a default, not a wall: owners can add policies.
-
-**Cost.**
-
-- Zonal cluster, so the GKE free tier covers the management fee.
-- Spot `e2-standard-4` nodes autoscaling 1–3, with 50 GB disks.
-- GKE cost allocation is on: with the detailed billing export to BigQuery, spend
-  breaks down by namespace, i.e. by team.
-- `-var gpu_pool=true` adds an L4 spot pool that scales from zero and is tainted for
-  GPU workloads only. It needs GPU quota, which a new project doesn't have, so it
-  wasn't exercised here.
-
-**Flat Terraform, no modules.** One environment, one root module. I'd extract modules
-when a second environment shows what actually varies.
+**Honest limits:**
+- All three agents run as your user on one machine. The boundaries are Claude Code's
+  tool list and Codex's sandbox, not separate OS users.
+- The reviewer can read files on disk, though not the keychain or the network, and it
+  still has Switch's attachment tool. Only you and your agents can address it, but a
+  draft it reviews comes from a requester.
+- With the Claude Code fallback, the reviewer has no sandbox, only Claude Code's
+  auto-mode review.
+- Ship's token can merge any PR in this repo. What stops it is the card.
+- On the card, click **Allow once**. "Allow for this session" can let later commands
+  run without asking.
+- On the local cluster there are no backups. On GKE, WAL and daily base backups go to
+  the team's bucket.
 
 ## Run it
 
-Needs `gcloud` (with `gke-gcloud-auth-plugin`), `terraform`, `helm`, `kubectl`, and a
-project with billing. Argo CD reads `gitops/` and `teams/` from this repo on GitHub.
-In a fork, run `make use-repo REPO=https://github.com/<you>/gke-platform` and push
-before `make bootstrap` or `make local-up`.
+You need macOS or Linux, Docker, `kind`, `helm`, `kubectl`, `yq` and `gh` (signed
+in), [Switch Console](https://docs.switchagents.ai) 0.40.1 or later with its local
+server running, and Claude Code signed in. Codex is optional.
 
-```sh
-PROJECT=my-project
-gcloud storage buckets create gs://$PROJECT-tfstate --project=$PROJECT --location=europe-west4 \
-  --uniform-bucket-level-access --public-access-prevention
-gcloud storage buckets update gs://$PROJECT-tfstate --versioning
+1. **Fork and point Argo CD at your fork.** Argo CD deploys from GitHub, so it has
+   to read your fork, not this repo.
+   ```sh
+   git clone https://github.com/<you>/platform-desk && cd platform-desk
+   make use-repo REPO=https://github.com/<you>/platform-desk
+   git commit -am "Point Argo CD at my fork" && git push
+   ```
+2. **Start the cluster.** This brings up kind with 1 control plane and 2 workers,
+   Argo CD, cert-manager and CloudNativePG, in about two minutes.
+   ```sh
+   make local-up
+   ```
+3. **Give ship a token.** Create a
+   [fine-grained token](https://github.com/settings/personal-access-tokens/new) for
+   your fork only, with Contents and Pull requests set to read and write. On macOS:
+   ```sh
+   security add-generic-password -s platform-desk-ship -a "$USER" -w   # prompts for the token
+   ```
+   On Linux, save it to `~/.config/platform-desk/ship-token` (mode 600).
+4. **Import the template.** In Switch Console, go to Templates → Import template,
+   pick `switch/platform-desk.template.yaml`, and click Use. Set `repo` to your fork.
+5. **Give review and ship their clones.**
+   ```sh
+   make agents-clone
+   ```
+6. **Ask for a database.** In Mattermost, as your own account rather than the admin,
+   post in `platform-requests`:
+   > @platform-intake we need a namespace and Postgres for payments-api, 3 instances for HA
 
-make init apply PROJECT=$PROJECT   # network, cluster, node pools, team buckets and IAM
-make bootstrap PROJECT=$PROJECT    # Argo CD, cluster secret, root app; Git takes over from here
-make argocd-ui                     # admin password, then https://localhost:8080
-make destroy PROJECT=$PROJECT      # team namespaces (and their disks) first, then terraform destroy
-```
+   When ship's card shows up, it's in a thread. Open the thread, read the command,
+   and click **Allow once**.
 
-Every `kubectl` and `helm` call in the Makefile names the cluster's context
-explicitly, so a stray current context can't receive anything.
+`make test` runs the validator's own tests. `make local-down` deletes the cluster.
 
-`make destroy` deletes the team namespaces and waits for their persistent volumes to
-go before running `terraform destroy`. If any volume is left, it stops. Deleting the
-cluster first would orphan the persistent disks, and they would keep billing.
+## Measured
 
-### Locally, on kind
+<!-- Filled in from the final clean run. -->
 
-`make local-up` runs the same Argo CD values, root app and team files on a kind
-cluster, with no GCP project. Needs Docker, `kind`, `helm` and `kubectl`.
+So far, from the runs on 4 November:
+- **Codex's first review:** it saved the draft, ran `make validate`, posted the
+  result and handed it back to intake in 32 seconds.
+- **The 3-instance request:** the review failed it for both real reasons. A third
+  instance needs a third node, so it can never schedule here; on the cluster, it
+  stayed Pending with "didn't match pod anti-affinity rules". And 3 × 5Gi doesn't fit
+  a 10Gi quota.
+- **`make ship` from the terminal:** for `orders-api` with 2 Postgres instances, it
+  went from push to a ready database in 52 seconds.
 
-```sh
-make local-up     # kind cluster (1 control plane, 2 workers), Argo CD, local cluster secret, root app
-make local-ui     # admin password, then https://localhost:8080
-make local-down   # deletes the kind cluster
-```
+## What existed before, and what was built during the event
 
-What's different from GKE:
+- **Before 3 November:** the platform, my `gke-platform` project. That's Terraform
+  for GKE, Argo CD with an ApplicationSet per team file, the team chart (namespace,
+  quota, Pod Security, NetworkPolicy, CloudNativePG), and the local kind mode. Its
+  history is in this repo up to `9403735`, and
+  [docs/PLATFORM.md](docs/PLATFORM.md) is its write-up.
+- **During the event:**
+  - [everything after `9403735`](https://github.com/IstvanCsVarga/platform-desk/compare/9403735...main):
+    the Switch template;
+  - `POLICY.md` and `policy.yaml`;
+  - `make validate` and its tests;
+  - `make ship`;
+  - `make agents-clone`;
+  - [BUILDLOG.md](BUILDLOG.md).
 
-- **No backups.** There's no Terraform, so there's no bucket.
-  `local/cluster-secret.yaml` sets `gke-platform/pg-backups: disabled`, and the team
-  chart then leaves out the `ObjectStore`, WAL archiving and the `ScheduledBackup`.
-  On GKE nothing sets it, so a missing bucket still stops a team's Postgres from
-  rendering.
-- **Owners have no effect.** Their `edit` RoleBindings render, but kind has no
-  Google accounts.
-- **Argo CD still reads `main` on GitHub**, so a change reaches the local cluster
-  once it's merged. In a fork, run `make use-repo` first (see above), or your
-  cluster follows this repo instead of yours.
-
-## Verified
-
-Deployed once into a new project on 22 October 2026, checked, and torn down the same
-evening.
-
-- `terraform apply`: 19 resources in 13 minutes, 10½ of them the GKE control plane.
-- `make bootstrap`: all six Argo CD applications Synced and Healthy 5 minutes later.
-  Nothing was applied by hand after `root`.
-
-![Argo CD: the root app, the platform apps, and the team apps the ApplicationSet generated](docs/argocd-root.png)
-
-On the running cluster:
-
-- **Backups.** The first base backup was in GCS a minute after the database started.
-  `kubectl cnpg status` showed WAL archiving OK with nothing waiting, and the replica
-  streaming from a second node. The autoscaler added that node for the required
-  anti-affinity.
-- **Restore drill.** I wrote 10,000 rows after that base backup, switched WAL, and
-  bootstrapped a new `Cluster` from the bucket alone. Row count, sum and an md5 over
-  every row matched the source. The table didn't exist at the base backup, so every
-  row came from WAL replay. The restore took 92 seconds.
-- **No keys.** The bucket's only team grants are to the namespace `principalSet`. No
-  service account in the project has a user-managed key, and the team namespace
-  holds only the certificates and passwords CNPG generates.
-- **Guardrails, tested from `evals`.**
-  - `pg_isready` against `pg-rw.voice-api:5432` got no response; from `voice-api`
-    itself it was accepting connections.
-  - A privileged pod was rejected by Pod Security `baseline`.
-  - A `LoadBalancer` Service was rejected by the quota.
-- **Cluster.** The control plane has no IP endpoint. Nodes are private spot Shielded VMs
-  with secure boot, run as `gke-nodes`, and give pods the GKE metadata server.
-- **Teardown.** `make destroy` deleted the team namespaces and their disks, then all 19
-  Terraform resources, in 10½ minutes. Afterwards the project had no instances, disks,
-  snapshots, IPs, load balancers, networks or clusters, only the Terraform state
-  bucket. From `apply` to the end of `destroy` took 40 minutes.
-
-![team-voice-api in Argo CD: guardrails, ObjectStore and the CloudNativePG cluster](docs/argocd-team-voice-api.png)
-
-**Locally, on kind** (2 November 2026):
-
-- `make local-up` took 65 seconds. The platform apps and `team-evals` were Synced
-  and Healthy 55 seconds later.
-- `team-voice-api` came up with both Postgres instances on separate workers and the
-  replica streaming, with no `ObjectStore` or `ScheduledBackup`.
-- kindnet enforces the NetworkPolicy: from `evals`, a connection to another team's
-  Postgres was refused, and from that team's own namespace it connected.
-
-### What broke, or surprised me
-
-- **`kubectl cnpg status` couldn't reach the instances.** On GKE the API server reaches
-  pods through the `konnectivity-agent` pods in `kube-system`, and the namespace-local
-  NetworkPolicy dropped those calls to the status port. Fixed by allowing just those
-  pods, on just port 8000 (`4263744`).
-- **My first restore drill came back without the test table, and the restore was
-  right.** I'd run the inserts and `pg_switch_wal()` in one `psql -c`, which is one
-  transaction, so the commit landed in a WAL segment that wasn't archived yet. That's
-  the RPO in practice: commits since the last archived segment are lost until
-  `archive_timeout` ships them.
-- **Sync waves opened early.** Argo CD gates a wave on the health of its Applications,
-  and a newly created Application reports Healthy before its first sync. So the Barman
-  plugin's app was created while cert-manager, which it needs, was still syncing. It
-  converged anyway, and the per-app retries make that safe. A health check that only
-  reports Healthy once Synced would make the waves mean what they say.
-
-## Known limits
-
-- **Adding a team takes two steps.** Merge the file, then run `make apply`. In
-  production, a CI pipeline would run the plan on the PR and the apply on merge.
-- **Recreating a team's `Cluster` against a bucket that still holds its old WAL
-  stops archiving.** Barman's empty-archive check refuses to overwrite it. A rebuilt
-  cluster needs a new `serverName` or a restore from that archive.
-- Owners are individual Google accounts, not Google groups.
-
-## What I'd change for production
-
-- **Cluster:** regional, with an on-demand node pool for system workloads. Spot only
-  for workloads that tolerate preemption.
-- **CI:** `terraform plan` on PRs and apply on merge, via GitHub Actions with keyless
-  Workload Identity Federation. Add `teamctl`, a small Go validator, so a team file
-  is checked before review rather than at plan time. Add CODEOWNERS on `teams/`.
-- **Argo CD:** SSO through Google groups, Argo CD managing itself, and a per-team
-  `AppProject` so teams deploy their own apps into their own namespace only.
-- **Postgres:** a PgBouncer `Pooler`, CNPG metrics through `PodMonitoring` for Google
-  Cloud Managed Service for Prometheus, alerts on WAL archiving failures, and
-  scheduled restore drills.
-- **Policy:** Policy Controller or Kyverno for image provenance, on top of Pod
-  Security.
+Built with Claude Code, with most prompts dictated in Wispr Flow. Codex is one of the
+agents.
 
 ## Layout
 
 ```
+switch/                the Switch template: agents, room, kickoff
+POLICY.md, policy.yaml the rules a request must meet, and their numbers
+scripts/               validate-team.sh (make validate), ship-team.sh (make ship), the validator's tests
+tests/validate/        team files that must pass, and ones that must fail for a named reason
 teams/                 one YAML per team: the input to everything
-terraform/             VPC, NAT, GKE, node pools, team contract checks, buckets, IAM
-gitops/bootstrap/      Argo CD Helm values and the root Application
-gitops/platform/       AppProjects, cert-manager, CloudNativePG, Barman Cloud plugin, teams ApplicationSet
-gitops/charts/team/    what a team gets in its namespace
+gitops/                Argo CD: root app, platform apps, teams ApplicationSet, the team chart
+terraform/             the GKE path (see docs/PLATFORM.md)
 local/                 kind cluster config and cluster secret for make local-up
-docs/                  screenshots from the deploy run
 ```

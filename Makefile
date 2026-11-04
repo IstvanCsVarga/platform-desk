@@ -87,7 +87,7 @@ local-down:
 # Points Argo CD at a fork: the root app, the teams AppProject and the teams
 # ApplicationSet all name the repo. Commit and push the result to the fork.
 use-repo:
-	@test -n "$(REPO)" || { echo "usage: make use-repo REPO=https://github.com/<you>/gke-platform"; exit 1; }
+	@test -n "$(REPO)" || { echo "usage: make use-repo REPO=https://github.com/<you>/platform-desk"; exit 1; }
 	OLD='$(REPO_NOW)' NEW='$(REPO)' perl -pi -e 's/\Q$$ENV{OLD}\E/$$ENV{NEW}/g' $(REPO_FILES)
 	@grep -c '$(REPO)' $(REPO_FILES)
 

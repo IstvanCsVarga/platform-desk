@@ -52,3 +52,31 @@ What broke and what was decided, session by session. The hackathon started on Tu
   the room's `users`). The instructions now say "your owner".
 - **Codex reviewed its first draft offline:** saved it, ran `make validate`,
   posted `RESULT PASS` and handed back to intake, in 32 seconds.
+
+## Wed 4 Nov, midday: the first request through the agents
+
+- **Second Mattermost account, `priya`, as the developer.** She asked
+  `platform-requests` for inventory-api with 3 Postgres instances.
+  - Intake asked for owners and size, created `req-inventory-api` with her, me and
+    both agents, and handed the draft to review.
+  - Codex failed it twice over: 3 instances need 3 nodes, and 3 × 5Gi doesn't fit
+    the 10Gi quota. Intake explained it to her in plain words and proposed 2.
+  - The second review passed.
+- **Priya told ship to ship.** Switch answered before the model saw it: "I only take
+  instructions from my owner".
+- **My own order brought up the card**, with the full `make ship` command and the
+  YAML. It sits in a thread under the order, which looks like silence from the
+  channel view.
+- **The first approved run opened PR #2, then failed to merge it**, and the script
+  had thrown GitHub's reason away. GitHub had an open incident at the time (Pull
+  Requests: partial outage, since 09:53 UTC).
+  - `make ship` now merges through the REST API and retries for 24 seconds.
+  - It prints GitHub's message when the merge still fails.
+  - It reuses a PR an earlier run left open, and always returns to `main`.
+  - Ship did what its instructions say: it posted the FAIL line and stopped, with
+    no retry.
+- **The token moved to the macOS keychain.** Inside Codex's sandbox, a file read
+  worked, but a keychain lookup found nothing and the network was blocked.
+- **The model's safeguards flagged my attack-style test prompt to intake** and fell
+  back to an older model for that session. The tool list in the session log is the
+  better proof anyway, so I tested that way after.
