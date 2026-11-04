@@ -48,7 +48,7 @@ fi
 git add "$file"
 git commit -q -m "Add team $team" -m "Requested in: ${ROOM:-the platform desk}
 Approved by: ${APPROVER:-the approver}"
-git_auth push -q -u origin "$branch"
+git_auth push -q -u origin "$branch" 2>&1 | sed '/^remote:/d'
 step "pushed $branch"
 
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)

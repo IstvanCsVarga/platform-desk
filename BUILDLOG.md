@@ -21,3 +21,9 @@ What broke and what was decided, session by session. The hackathon started on Tu
   cluster stayed at 2 of 3 ready for more than 6 minutes. The scheduler said "0/3
   nodes are available: 1 node(s) had untolerated taint(s), 2 node(s) didn't match pod
   anti-affinity rules". The validator now rejects it before it reaches Git.
+- **First `make ship`, from the terminal before the agents existed:** team
+  `orders-api` with 2 Postgres instances went from push to ready in 52 seconds.
+  - It opened and merged PR #1.
+  - Argo CD created the app 2 seconds after the merge, because `make ship` sets the
+    ApplicationSet's `application-set-refresh` annotation instead of waiting for
+    its 3-minute poll.
