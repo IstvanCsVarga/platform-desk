@@ -23,7 +23,7 @@ sequenceDiagram
   actor PE as Platform engineer
   Dev->>I: #platform-requests: "namespace + Postgres for payments-api, 3 instances"
   I->>Dev: asks for owners and size
-  I->>I: creates room req-payments-api, links it back
+  I->>I: creates req-payments-api for you, review and ship (not the developer)
   I->>R: draft teams/payments-api.yaml
   R->>I: make validate: FAIL, 3 instances need 3 nodes, the cluster has 2
   I->>Dev: explains, proposes 2
@@ -50,10 +50,15 @@ Switch Console and every limit below comes with it.
 | `platform-review` | Codex (Claude Code if Codex isn't installed) | you and your agents | Run `make validate` in its own clone. Codex's sandbox has no network. |
 | `platform-ship` | Claude Code, `auto_mode: false`, `auto_approve: false` | you only | Run `make ship`, and only after you click Allow on its card. |
 
-- **One room per request.** Intake creates `req-<team>` with `create_room`, adds
-  the requester, you and the other two agents, and links it to `platform-requests`.
-  The question, the draft, the review, the failure, the fix, the approval, the PR
-  and the handover all stay in that room.
+- **Two rooms, kept apart on purpose.**
+  - Developers talk to intake in `platform-requests`, each in their own thread.
+  - For each request, intake creates `req-<team>` with `create_room`, with you,
+    review and ship, and links it back. The draft, the review, the approval, the
+    PR and the handover stay there.
+  - The developer isn't in that room, and review and ship aren't in
+    `platform-requests`. The agents that can run commands never read what a
+    developer writes, only the YAML intake drafted, and the validator rejects any
+    key it doesn't know.
 - **Two vendors check each other.** Claude Code drafts and Codex reviews, by
   @-mention in the room.
 - **The approval is a Switch permission card.** Ship runs approval-required, so its
@@ -100,12 +105,20 @@ Ship's GitHub token is fine-grained and only works on this repo. On macOS it liv
 the login keychain. Inside Codex's sandbox, reading a file worked, but a keychain
 lookup found nothing and the network was blocked.
 
+That isn't a wall, though. Codex can ask to leave its sandbox, and in the auto mode
+Switch runs it in, Codex's own automatic reviewer answers, not you. I asked the
+reviewer to read a dummy keychain item. It asked to leave the sandbox, the request
+was approved, and it printed the value. So I took the developers out of its room.
+The only other choice Switch Console offers for Codex is approval-required, where
+every command and every tool call waits for you.
+
 **Honest limits:**
 - All three agents run as your user on one machine. The boundaries are Claude Code's
   tool list and Codex's sandbox, not separate OS users.
-- The reviewer can read files on disk, though not the keychain or the network, and it
-  still has Switch's attachment tool. Only you and your agents can address it, but a
-  draft it reviews comes from a requester.
+- Treat the reviewer as able to read anything your user can. Codex's automatic
+  reviewer let it out of the sandbox for a keychain read, and it still has Switch's
+  attachment tool. Developers can't address it and aren't in its room, but the draft
+  it reviews still carries their values, through intake.
 - With the Claude Code fallback, the reviewer has no sandbox, only Claude Code's
   auto-mode review.
 - Ship's token can merge any PR in this repo. What stops it is the card.

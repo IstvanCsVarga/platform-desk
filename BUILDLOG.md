@@ -80,3 +80,13 @@ What broke and what was decided, session by session. The hackathon started on Tu
 - **The model's safeguards flagged my attack-style test prompt to intake** and fell
   back to an older model for that session. The tool list in the session log is the
   better proof anyway, so I tested that way after.
+- **The keychain alone doesn't stop the reviewer.** Switch runs Codex in auto mode,
+  where Codex's own automatic reviewer answers its requests to leave the sandbox. I
+  asked the reviewer to read a dummy keychain item. It asked to leave the sandbox,
+  the request was approved, and it printed the value.
+  - Switch Console never picks the Codex mode in which those requests come to a
+    person. Approval-required would ask about every command and tool call.
+  - So the template now keeps the rooms apart. Developers talk to intake in
+    `platform-requests`. `req-<team>` holds only the owner, review and ship. Review
+    and ship are no longer members of `platform-requests`, so nothing a developer
+    writes reaches an agent that can run commands, except the YAML intake drafted.
