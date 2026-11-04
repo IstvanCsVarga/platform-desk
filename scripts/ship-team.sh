@@ -5,8 +5,9 @@
 #
 # Usage: scripts/ship-team.sh <team> < team.yaml
 #   ROOM, APPROVER and REVIEW, if set, go into the PR description.
-#   GitHub access comes from .ship-token (a fine-grained token for this repo only)
-#   when that file exists, otherwise from your own gh login.
+#   GitHub access comes from ~/.config/platform-desk/ship-token (a fine-grained
+#   token for this repo only; SHIP_TOKEN_FILE overrides the path) when that file
+#   exists, otherwise from your own gh login.
 #   The handover never prints the database password, only where to read it.
 set -euo pipefail
 
@@ -19,11 +20,12 @@ step() { printf '[%4ss] %s\n' $(($(date +%s) - t0)) "$*"; }
 die() { printf 'FAIL   %s\n' "$*"; exit 1; }
 
 cd "$root"
-if [ -s .ship-token ]; then
-  GH_TOKEN=$(cat .ship-token); export GH_TOKEN
-  access="the repo-scoped token in .ship-token"
+token_file=${SHIP_TOKEN_FILE:-$HOME/.config/platform-desk/ship-token}
+if [ -s "$token_file" ]; then
+  GH_TOKEN=$(cat "$token_file"); export GH_TOKEN
+  access="a token that only works on this repo"
 else
-  echo "WARN   no .ship-token, so this uses your own gh login"
+  echo "WARN   no $token_file, so this uses your own gh login"
   access="the owner's gh login"
 fi
 git_auth() { # git over HTTPS with GH_TOKEN when there is one

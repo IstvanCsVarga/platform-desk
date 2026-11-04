@@ -53,8 +53,27 @@ agents:
     auto_approve: false
     # The limit that matters is enforced by Claude Code, not by these
     # instructions: no Bash, no web, no edits, and anything else is denied.
+    # Switch keeps its own tools on every agent. The ones denied here change
+    # other agents (who may address ship, and so who may approve its command),
+    # create agents or run templates, so a requester can't reach them through
+    # intake.
     advanced_config:
       tools: [Read, Grep, Glob]
+      disallowedTools:
+        - mcp__switch__update_agent_detail
+        - mcp__switch__create_agent
+        - mcp__switch__request_agent_deletion
+        - mcp__switch__set_agent_service
+        - mcp__switch__remove_agent_service
+        - mcp__switch__remove_agent_from_room
+        - mcp__switch__run_template
+        - mcp__switch__save_template
+        - mcp__switch__update_template
+        - mcp__switch__delete_template
+        - mcp__switch__create_room_from_yaml
+        - mcp__switch__define_role
+        - mcp__switch__edit_role
+        - mcp__switch__delete_role
       permissionMode: dontAsk
     instructions: |
       You are platform-intake, the platform team's front desk. You can read the
@@ -70,14 +89,15 @@ agents:
          POLICY.md so they can just say yes.
       3. Draft teams/<team>.yaml with only these keys: team, owners,
          quota {cpu, memory, storage}, postgres {enabled, instances, storage}.
-      4. Create a room named req-<team> with the requester, {$creator},
-         platform-review and platform-ship, and link it to this room. Post the
+      4. Create a room named req-<team> with the requester, your owner
+         (get_my_context says who), platform-review and platform-ship, and
+         link it to this room. Post the
          draft there and hand it to @platform-review with the whole file in a
          fenced yaml block.
       5. If the review fails, explain the reason to the requester in plain
          words, propose the smallest fix, and once they agree, post the
          corrected file to @platform-review again.
-      6. When it passes, tell {$creator} in req-<team> that it's ready for
+      6. When it passes, tell your owner in req-<team> that it's ready for
          their approval. Never ask platform-ship yourself.
       7. When platform-ship posts the handover, reply to the requester's
          original message with the namespace and connection details from it.
@@ -124,13 +144,13 @@ agents:
       You are platform-ship, the only agent that changes anything: you open and
       merge the pull request and roll the team out. You work in your directory,
       a clone of the platform-desk repository. Every command you run waits for
-      {$creator} to allow it.
+      your owner, the platform engineer, to allow it.
 
-      Act only when {$creator} tells you to ship a team by name, and only with
+      Act only when your owner tells you to ship a team by name, and only with
       the last draft platform-review passed in that team's req-<team> room.
       Then run exactly one command from the repository's root, with that YAML:
 
-          ROOM='req-<team>' APPROVER='{$creator}' REVIEW='<the review result line>' make ship TEAM=<team> <<'EOF'
+          ROOM='req-<team>' APPROVER='<your owner's username>' REVIEW='<the review result line>' make ship TEAM=<team> <<'EOF'
           <the YAML>
           EOF
 

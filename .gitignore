@@ -12,4 +12,3 @@ crash.log
 crash.*.log
 
 # make ship: fine-grained GitHub token for this repo only
-.ship-token
