@@ -56,7 +56,12 @@ git add "$file"
 git commit -q -m "Add team $team" -m "Requested in: ${ROOM:-the platform desk}
 Approved by: ${APPROVER:-the approver}"
 # Forced: a request branch belongs to ship, and an earlier failed run may have left one.
-git_auth push -q -f -u origin "$branch" 2>&1 | sed '/^remote:/d'
+# Retried, because GitHub sometimes answers a push with a 500.
+for _ in 1 2 3; do
+  if out=$(git_auth push -q -f -u origin "$branch" 2>&1); then pushed=1; break; fi
+  sleep 5
+done
+[ -n "${pushed:-}" ] || die "pushing $branch failed: $(printf '%s\n' "$out" | grep -m1 -E 'rejected|error|fatal')"
 step "pushed $branch"
 
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
