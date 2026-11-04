@@ -1,0 +1,3 @@
+# expect: must equal the file name
+team: payments
+owners: [sam@example.com]

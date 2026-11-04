@@ -1,0 +1,4 @@
+# expect: unknown postgress
+team: typo-key
+owners: [sam@example.com]
+postgress: { enabled: true }

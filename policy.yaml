@@ -1,0 +1,16 @@
+# Limits for scripts/validate-team.sh. POLICY.md explains each one.
+
+quota_max:
+  cpu: "4"
+  memory: 8Gi
+  storage: 50Gi
+
+postgres:
+  # The team chart puts every instance on its own node (required anti-affinity).
+  # The local kind cluster has two workers, so a third instance never schedules.
+  max_instances: 2
+  # What the team chart requests per instance; it counts against the team quota.
+  # Keep in step with gitops/charts/team/templates/postgres.yaml.
+  per_instance:
+    cpu: 100m
+    memory: 256Mi

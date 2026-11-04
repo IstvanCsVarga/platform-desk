@@ -19,7 +19,10 @@ LOCAL_KUBECTL := kubectl --context kind-$(LOCAL_CLUSTER)
 REPO_NOW = $(shell sed -n 's/^ *repoURL: //p' gitops/bootstrap/root.yaml)
 REPO_FILES := gitops/bootstrap/root.yaml gitops/platform/projects.yaml gitops/platform/teams.yaml
 
-.PHONY: init plan apply credentials bridge bootstrap argocd-ui destroy local-up local-ui local-down use-repo
+# What `make ship` writes into the PR description, when platform-ship sets them.
+export ROOM APPROVER REVIEW
+
+.PHONY: init plan apply credentials bridge bootstrap argocd-ui destroy local-up local-ui local-down use-repo validate test ship
 
 init:
 	$(TF) init -backend-config=bucket=$(PROJECT)-tfstate
@@ -87,3 +90,16 @@ use-repo:
 	@test -n "$(REPO)" || { echo "usage: make use-repo REPO=https://github.com/<you>/gke-platform"; exit 1; }
 	OLD='$(REPO_NOW)' NEW='$(REPO)' perl -pi -e 's/\Q$$ENV{OLD}\E/$$ENV{NEW}/g' $(REPO_FILES)
 	@grep -c '$(REPO)' $(REPO_FILES)
+
+# Offline checks of one team file against POLICY.md (what platform-review runs).
+validate:
+	@test -n "$(FILE)" || { echo "usage: make validate FILE=teams/<team>.yaml"; exit 1; }
+	@scripts/validate-team.sh $(FILE)
+
+test:
+	@scripts/test-validate.sh
+
+# Branch, PR, merge, Argo CD sync, wait for Postgres, handover (what platform-ship runs).
+ship:
+	@test -n "$(TEAM)" || { echo "usage: make ship TEAM=<team> < team.yaml"; exit 1; }
+	@scripts/ship-team.sh $(TEAM)

@@ -1,0 +1,4 @@
+# expect: above the standard tier
+team: big-batch
+owners: [sam@example.com]
+quota: { cpu: "16", memory: 8Gi, storage: 50Gi }

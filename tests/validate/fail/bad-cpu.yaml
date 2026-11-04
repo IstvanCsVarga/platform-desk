@@ -1,0 +1,4 @@
+# expect: is not a Kubernetes quantity
+team: bad-cpu
+owners: [sam@example.com]
+quota: { cpu: two }

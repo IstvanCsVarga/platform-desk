@@ -1,0 +1,3 @@
+# expect: not email addresses
+team: bad-owner
+owners: [priya]

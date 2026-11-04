@@ -1,0 +1,5 @@
+# expect: doesn't fit in quota.storage
+team: pg-disk
+owners: [sam@example.com]
+quota: { cpu: "2", memory: 4Gi, storage: 50Gi }
+postgres: { enabled: true, instances: 2, storage: 30Gi }

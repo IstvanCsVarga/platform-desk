@@ -1,0 +1,4 @@
+team: payments-api
+owners: [priya@example.com]
+quota: { cpu: "2", memory: 4Gi, storage: 20Gi }
+postgres: { enabled: true, instances: 2, storage: 5Gi }

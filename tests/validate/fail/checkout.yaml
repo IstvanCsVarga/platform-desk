@@ -1,0 +1,5 @@
+# expect: needs 3 nodes
+team: checkout
+owners: [sam@example.com]
+quota: { cpu: "4", memory: 8Gi, storage: 50Gi }
+postgres: { enabled: true, instances: 3, storage: 5Gi }

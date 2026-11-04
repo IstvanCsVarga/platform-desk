@@ -1,0 +1,3 @@
+# expect: is reserved
+team: kube-billing
+owners: [sam@example.com]
