@@ -5,9 +5,11 @@
 #
 # Usage: scripts/ship-team.sh <team> < team.yaml
 #   ROOM, APPROVER and REVIEW, if set, go into the PR description.
-#   GitHub access comes from ~/.config/platform-desk/ship-token (a fine-grained
-#   token for this repo only; SHIP_TOKEN_FILE overrides the path) when that file
-#   exists, otherwise from your own gh login.
+#   GitHub access comes from a fine-grained token that only works on this repo:
+#   on macOS from the login keychain (service platform-desk-ship), which the
+#   Codex reviewer's sandbox can't reach, otherwise from
+#   ~/.config/platform-desk/ship-token (SHIP_TOKEN_FILE overrides the path).
+#   Without either, it uses your own gh login.
 #   The handover never prints the database password, only where to read it.
 set -euo pipefail
 
@@ -20,12 +22,14 @@ step() { printf '[%4ss] %s\n' $(($(date +%s) - t0)) "$*"; }
 die() { printf 'FAIL   %s\n' "$*"; exit 1; }
 
 cd "$root"
+token=$(security find-generic-password -s platform-desk-ship -w 2>/dev/null || true)
 token_file=${SHIP_TOKEN_FILE:-$HOME/.config/platform-desk/ship-token}
-if [ -s "$token_file" ]; then
-  GH_TOKEN=$(cat "$token_file"); export GH_TOKEN
+if [ -z "$token" ] && [ -s "$token_file" ]; then token=$(cat "$token_file"); fi
+if [ -n "$token" ]; then
+  GH_TOKEN=$token; export GH_TOKEN
   access="a token that only works on this repo"
 else
-  echo "WARN   no $token_file, so this uses your own gh login"
+  echo "WARN   no ship token in the keychain or $token_file, so this uses your own gh login"
   access="the owner's gh login"
 fi
 git_auth() { # git over HTTPS with GH_TOKEN when there is one
