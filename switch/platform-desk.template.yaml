@@ -2,8 +2,9 @@
 # agents handle it, and the person who deployed this template approves the only
 # step that changes anything.
 #
-#   platform-intake  Claude Code, no shell. Anyone in the room can talk to it, so
-#                    it has nothing to misuse: it reads the repo and drafts.
+#   platform-intake  Claude Code with only Switch's room tools: no files, no
+#                    shell, no web. Anyone in the room can talk to it, so it has
+#                    nothing to misuse. It asks, drafts and opens the request room.
 #   platform-review  Codex if installed (sandboxed, no network), else Claude Code.
 #                    Runs `make validate`.
 #   platform-ship    Claude Code, approval-required. Takes orders only from the
@@ -44,22 +45,24 @@ params:
 agents:
   - name: platform-intake
     display_name: Platform intake
-    description: Talks to requesters and drafts the team file. No shell.
+    description: Talks to requesters and drafts the team file. No files, no shell.
     provider: claude
     location: "{location}"
     directory: "{directory}"
-    repo: "{repo}"
     addressing: anyone
     auto_approve: false
-    # The limit that matters is enforced by Claude Code, not by these
-    # instructions: no Bash, no web, no edits, and anything else is denied.
-    # Switch keeps its own tools on every agent. The ones denied here change
-    # other agents (who may address ship, and so who may approve its command),
-    # create agents or run templates, so a requester can't reach them through
-    # intake.
+    # Anyone in the room can talk to intake, so Claude Code gives it nothing to
+    # misuse: `tools` allows only Switch's own tools (Switch always adds them),
+    # so no files, no shell and no web, and anything else is denied. Of the
+    # Switch tools, it loses the ones that upload or save local files (a way to
+    # read any file without Read), and the ones that change other agents (who
+    # may address ship, and so who may approve its command), create agents or
+    # run templates.
     advanced_config:
-      tools: [Read, Grep, Glob]
+      tools: [mcp__switch]
       disallowedTools:
+        - mcp__switch__send_attachment
+        - mcp__switch__download_attachment
         - mcp__switch__update_agent_detail
         - mcp__switch__create_agent
         - mcp__switch__request_agent_deletion
@@ -76,33 +79,41 @@ agents:
         - mcp__switch__delete_role
       permissionMode: dontAsk
     instructions: |
-      You are platform-intake, the platform team's front desk. You can read the
-      platform-desk repository in your directory (POLICY.md, policy.yaml,
-      teams/) and talk in rooms. You have no shell and no GitHub access, by
-      design: you draft, you never change anything.
+      You are platform-intake, the platform team's front desk. You talk in
+      rooms and draft requests. Anyone in the room can talk to you, so you have
+      no files, no shell and no GitHub access, by design: you draft, you never
+      change anything.
+
+      A request is a file teams/<team>.yaml with only these keys:
+        team: <name, also the namespace>
+        owners: [<email addresses>]
+        quota: { cpu: "2", memory: 4Gi, storage: 10Gi }
+        postgres: { enabled: true, instances: 1, storage: 5Gi }
+      The values shown are the defaults. Leave postgres out if they don't
+      need a database.
+
+      You don't judge requests yourself. platform-review checks every draft
+      against POLICY.md with `make validate`, and its result is the only one
+      that counts. Draft what the requester asks for, and if they're unsure,
+      offer the defaults.
 
       When someone asks for a namespace or a database:
-      1. Read POLICY.md if you haven't yet in this session.
-      2. Ask for what's missing in one message: team name, owners' email
+      1. Ask for what's missing in one message: team name, owners' email
          addresses, roughly how much CPU, memory and storage, and whether they
-         need Postgres and how many instances. Offer the defaults from
-         POLICY.md so they can just say yes.
-      3. Draft teams/<team>.yaml with only these keys: team, owners,
-         quota {cpu, memory, storage}, postgres {enabled, instances, storage}.
-      4. Create a room named req-<team> with the requester, your owner
+         need Postgres and how many instances.
+      2. Create a room named req-<team> with the requester, your owner
          (get_my_context says who), platform-review and platform-ship, and
-         link it to this room. Post the
-         draft there and hand it to @platform-review with the whole file in a
-         fenced yaml block.
-      5. If the review fails, explain the reason to the requester in plain
+         link it to this room. Post the draft there and hand it to
+         @platform-review with the whole file in a fenced yaml block.
+      3. If the review fails, explain the reason to the requester in plain
          words, propose the smallest fix, and once they agree, post the
          corrected file to @platform-review again.
-      6. When it passes, tell your owner in req-<team> that it's ready for
+      4. When it passes, tell your owner in req-<team> that it's ready for
          their approval. Never ask platform-ship yourself.
-      7. When platform-ship posts the handover, reply to the requester's
+      5. When platform-ship posts the handover, reply to the requester's
          original message with the namespace and connection details from it.
 
-      Quote POLICY.md for limits; don't invent your own or promise timelines.
+      Don't promise limits or timelines; point to the review result instead.
 
   - name: platform-review
     display_name: Platform review

@@ -104,13 +104,14 @@ ship:
 	@test -n "$(TEAM)" || { echo "usage: make ship TEAM=<team> < team.yaml"; exit 1; }
 	@scripts/ship-team.sh $(TEAM)
 
-# Switch tells each agent to clone the repo itself, which intake (no shell) and a
-# Codex reviewer (no network) can't do. This clones it for all three, from the
-# repo Argo CD reads, into the folder Switch Console keeps this server's agents in.
+# Switch tells an agent with a repo to clone it itself, which a Codex reviewer (no
+# network) can't do. This clones it for review and ship, from the repo Argo CD
+# reads, into the folder Switch Console keeps this server's agents in. Intake
+# has no files at all.
 AGENTS_DIR ?= $(firstword $(wildcard $(HOME)/.switch/agents/*))
 agents-clone:
 	@test -d "$(AGENTS_DIR)" || { echo "no Switch agents folder yet: open Switch Console and start its server first, or pass AGENTS_DIR="; exit 1; }
-	@for a in platform-intake platform-review platform-ship; do \
+	@for a in platform-review platform-ship; do \
 		d="$(AGENTS_DIR)/$$a"; \
 		if [ -d "$$d/.git" ]; then git -C "$$d" pull -q --ff-only && echo "updated $$d"; \
 		else git clone -q $(REPO_NOW) "$$d" && echo "cloned $(REPO_NOW) into $$d"; fi; \
