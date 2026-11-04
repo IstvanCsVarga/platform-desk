@@ -73,7 +73,7 @@ for _ in 1 2 3 4 5 6 7 8; do
   if out=$(gh api -X PUT "repos/$repo/pulls/${pr##*/}/merge" -f merge_method=squash 2>&1); then merged=1; break; fi
   sleep 3
 done
-[ -n "${merged:-}" ] || die "merging $pr failed: $(printf '%s\n' "$out" | tail -1)"
+[ -n "${merged:-}" ] || die "merging $pr failed: $(printf '%s\n' "$out" | tail -1 | sed 's/.*gh: //')"
 gh api -X DELETE "repos/$repo/git/refs/heads/$branch" >/dev/null 2>&1 || true
 git switch -q main
 git_auth pull -q --ff-only origin main
