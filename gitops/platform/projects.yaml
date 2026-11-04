@@ -30,7 +30,7 @@ metadata:
 spec:
   description: One namespace per team, rendered from teams/*.yaml.
   sourceRepos:
-    - https://github.com/IstvanCsVarga/gke-platform
+    - https://github.com/IstvanCsVarga/platform-desk
   destinations:
     - { server: https://kubernetes.default.svc, namespace: "!kube-*" }
     - { server: https://kubernetes.default.svc, namespace: "!gke-*" }

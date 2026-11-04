@@ -8,7 +8,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/IstvanCsVarga/gke-platform
+    repoURL: https://github.com/IstvanCsVarga/platform-desk
     targetRevision: main
     path: gitops/platform
   destination:
