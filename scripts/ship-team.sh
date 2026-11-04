@@ -46,6 +46,7 @@ git cat-file -e "origin/main:$file" 2>/dev/null && die "$file already exists on 
 
 branch=request/$team
 git switch -q -C "$branch" origin/main
+trap 'git switch -q main 2>/dev/null || true' EXIT # back on main however this ends
 cat >"$file"
 if ! scripts/validate-team.sh "$file" | sed 's/^/       /'; then
   rm -f "$file"; git switch -q main; git branch -q -D "$branch"
@@ -54,7 +55,8 @@ fi
 git add "$file"
 git commit -q -m "Add team $team" -m "Requested in: ${ROOM:-the platform desk}
 Approved by: ${APPROVER:-the approver}"
-git_auth push -q -u origin "$branch" 2>&1 | sed '/^remote:/d'
+# Forced: a request branch belongs to ship, and an earlier failed run may have left one.
+git_auth push -q -f -u origin "$branch" 2>&1 | sed '/^remote:/d'
 step "pushed $branch"
 
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
@@ -63,10 +65,17 @@ body="Requested in ${ROOM:-the platform desk}.
 Review: ${REVIEW:-platform-review ran make validate and it passed.}
 
 Approved in the room by ${APPROVER:-the approver}. Opened and merged by platform-ship with $access."
-pr=$(gh pr create --repo "$repo" --base main --head "$branch" --title "Add team $team" --body "$body")
-step "opened $pr"
-gh pr merge "$pr" --repo "$repo" --squash --delete-branch >/dev/null 2>&1 || gh pr view "$pr" --repo "$repo" --json state -q .state | grep -qx MERGED || die "merging $pr failed"
-git switch -q main 2>/dev/null || true
+pr=$(gh pr list --repo "$repo" --head "$branch" --state open --json url -q '.[0].url')
+if [ -n "$pr" ]; then step "reusing $pr, left open by an earlier run"
+else pr=$(gh pr create --repo "$repo" --base main --head "$branch" --title "Add team $team" --body "$body"); step "opened $pr"; fi
+# Right after a push GitHub may still be working out whether the PR can merge, so retry briefly.
+for _ in 1 2 3 4 5 6 7 8; do
+  if out=$(gh api -X PUT "repos/$repo/pulls/${pr##*/}/merge" -f merge_method=squash 2>&1); then merged=1; break; fi
+  sleep 3
+done
+[ -n "${merged:-}" ] || die "merging $pr failed: $(printf '%s\n' "$out" | tail -1)"
+gh api -X DELETE "repos/$repo/git/refs/heads/$branch" >/dev/null 2>&1 || true
+git switch -q main
 git_auth pull -q --ff-only origin main
 git branch -q -D "$branch" 2>/dev/null || true
 step "merged $pr"

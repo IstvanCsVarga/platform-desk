@@ -113,6 +113,6 @@ agents-clone:
 	@test -d "$(AGENTS_DIR)" || { echo "no Switch agents folder yet: open Switch Console and start its server first, or pass AGENTS_DIR="; exit 1; }
 	@for a in platform-review platform-ship; do \
 		d="$(AGENTS_DIR)/$$a"; \
-		if [ -d "$$d/.git" ]; then git -C "$$d" pull -q --ff-only && echo "updated $$d"; \
+		if [ -d "$$d/.git" ]; then git -C "$$d" switch -q main && git -C "$$d" pull -q --ff-only && echo "updated $$d"; \
 		else git clone -q $(REPO_NOW) "$$d" && echo "cloned $(REPO_NOW) into $$d"; fi; \
 	done
