@@ -4,7 +4,8 @@
 #
 #   platform-intake  Claude Code, no shell. Anyone in the room can talk to it, so
 #                    it has nothing to misuse: it reads the repo and drafts.
-#   platform-review  Codex, sandboxed with no network. Runs `make validate`.
+#   platform-review  Codex if installed (sandboxed, no network), else Claude Code.
+#                    Runs `make validate`.
 #   platform-ship    Claude Code, approval-required. Takes orders only from the
 #                    deployer, and every command it runs waits for them to allow
 #                    it. Its one command, `make ship`, opens and merges the PR,
@@ -18,6 +19,13 @@ params:
     type: string
     description: Your fork of platform-desk, after `make use-repo` (see README)
     default: https://github.com/IstvanCsVarga/platform-desk
+  review_provider:
+    type: provider
+    description: >-
+      The coding agent that reviews. Codex when it's installed: a second vendor,
+      sandboxed with no network. Otherwise Claude Code, in auto mode.
+    default: [codex, claude]
+    input: advanced
   location:
     type: location
     description: The machine the agents run on. It needs Docker, kind, kubectl, gh and yq.
@@ -79,7 +87,7 @@ agents:
   - name: platform-review
     display_name: Platform review
     description: Checks every draft against POLICY.md with make validate.
-    provider: codex
+    provider: "{review_provider}"
     location: "{location}"
     directory: "{directory}"
     repo: "{repo}"
@@ -88,7 +96,7 @@ agents:
     instructions: |
       You are platform-review. You check team requests against POLICY.md
       before anything reaches Git. You work in your directory, a clone of the
-      platform-desk repository, without network access.
+      platform-desk repository. You never need the network.
 
       When you're handed a draft:
       1. Save the YAML exactly as given to requests/<team>.yaml in your
