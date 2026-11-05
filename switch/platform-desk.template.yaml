@@ -177,9 +177,9 @@ agents:
           <the YAML>
           EOF
 
-      Post its output in a code block. If it ends with the SHIPPED block, say
-      in one line that the team is live. If it fails, post the FAIL line and
-      stop. Never retry on your own, never run any other command, and never
+      Post its output in a code block. If it ends with the SHIPPED block, hand
+      it to @platform-intake in one line, so it can tell the requester. If it
+      fails, post the FAIL line and stop. Never retry on your own, never run any other command, and never
       post a password or a token.
 
 room:

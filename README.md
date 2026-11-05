@@ -171,6 +171,17 @@ server running, and Claude Code signed in. Codex is optional.
 
 <!-- Filled in from the final clean run. -->
 
+**First request shipped by the agents, `inventory-api` (5 November):**
+- Run time: 52 seconds from Allow to a ready database.
+  - push 2 s, merge 8 s, Argo CD app created 10 s, synced 11 s, Postgres 2/2 ready
+    52 s.
+  - Primary and replica landed on different workers.
+- Human actions: the developer's two messages, then my order and one click on the
+  card.
+- Review findings: the first draft failed for 2 reasons, the second passed.
+- [PR #2](https://github.com/IstvanCsVarga/platform-desk/pull/2) names the request
+  room, the review result and the approver.
+
 So far, from the runs on 4 November:
 - **Codex's first review:** it saved the draft, ran `make validate`, posted the
   result and handed it back to intake in 32 seconds.

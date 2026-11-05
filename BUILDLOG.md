@@ -90,3 +90,20 @@ What broke and what was decided, session by session. The hackathon started on Tu
     `platform-requests`. `req-<team>` holds only the owner, review and ship. Review
     and ship are no longer members of `platform-requests`, so nothing a developer
     writes reaches an agent that can run commands, except the YAML intake drafted.
+
+## Thu 5 Nov, morning: the first request shipped by the agents
+
+- **GitHub's incident outlasted Wednesday.** The second approved run got
+  `remote rejected … (Internal Server Error)` on the push, and the script exited
+  with no FAIL line. Now it retries a push three times and ends with
+  `FAIL pushing …`.
+- **Thursday 09:59, third card, Allow once:** `inventory-api` was shipped in 52
+  seconds.
+  - It reused PR #2 from the first run, merged it at 8 s, and Argo CD had the app
+    at 10 s.
+  - Postgres reached 2/2 ready at 52 s, with the primary and replica on different
+    workers.
+  - The PR description names the room, the review result and the approver.
+- **Intake never told priya.** Ship posted the handover without addressing anyone,
+  and an agent only wakes when it's addressed. Ship now hands the handover to
+  @platform-intake.
